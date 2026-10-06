@@ -29,15 +29,15 @@ ${green}  aic${reset}                    ${dim}# staged 파일로 AI 커밋 메�
 ${green}  aic --all${reset}              ${dim}# 모든 파일을 staging 후 커밋${reset}
 ${green}  ai-commit${reset}              ${dim}# 별칭 명령어${reset}
 
-${cyan}${bold}agy CLI를 통해 동작합니다${reset}
+${cyan}${bold}agy 또는 claude CLI를 통해 동작합니다${reset}
 
 ${yellow}${bold}시작하기 전에:${reset}
-${yellow}  1.${reset} agy CLI가 설치되어 있는지 확인해주세요.
-${yellow}  2.${reset} 첫 실행: ${green}aic${reset} ${dim}(언어 선택)${reset}
+${yellow}  1.${reset} agy 또는 claude CLI가 설치되어 있는지 확인해주세요.
+${yellow}  2.${reset} 첫 실행: ${green}aic${reset} ${dim}(언어 및 AI 선택)${reset}
 
 ${blue}${bold}추가 설정:${reset}
 ${blue}  • Git alias 설정:${reset} ${green}aic --setup${reset}
-${blue}  • 언어 변경:${reset} ${green}aic --configure${reset}
+${blue}  • 설정 변경:${reset} ${green}aic --configure${reset}
 ${blue}  • 도움말:${reset} ${green}aic --help${reset}
 
 ${magenta}${bold}자세한 사용법: https://github.com/c17an/gemini-commit-assistant${reset}
@@ -52,11 +52,11 @@ ${green}  aic${reset}                    ${dim}# Generate AI commit message for 
 ${green}  aic --all${reset}              ${dim}# Stage all files and commit${reset}
 ${green}  ai-commit${reset}              ${dim}# Alias command${reset}
 
-${cyan}${bold}Powered by agy CLI${reset}
+${cyan}${bold}Powered by agy or claude CLI${reset}
 
 ${yellow}${bold}Before getting started:${reset}
-${yellow}  1.${reset} Make sure agy CLI is installed.
-${yellow}  2.${reset} First run: ${green}aic${reset} ${dim}(select language)${reset}
+${yellow}  1.${reset} Make sure agy or claude CLI is installed.
+${yellow}  2.${reset} First run: ${green}aic${reset} ${dim}(select language & AI)${reset}
 
 ${blue}${bold}Additional settings:${reset}
 ${blue}  • Set up Git alias:${reset} ${green}aic --setup${reset}

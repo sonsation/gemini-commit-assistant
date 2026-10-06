@@ -12,6 +12,13 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+# 종료 및 시그널 처리: 터미널 커서 복원 및 임시 파일 정리
+cleanup() {
+    tput cnorm 2>/dev/null
+    rm -f /tmp/aic_*_$$ 2>/dev/null
+}
+trap cleanup EXIT INT TERM
+
 # 대화형 선택 메뉴 함수 (방향키 및 번호 입력 지원)
 # 사용법: interactive_menu "프롬프트 텍스트" 선택지배열이름 [기본값인덱스]
 interactive_menu() {
@@ -112,13 +119,39 @@ interactive_menu() {
 # 설정 파일 위치
 CONFIG_FILE="$HOME/.gemini-commit-config.json"
 
+# JSON 파일에서 특정 키의 값을 안전하게 추출하는 함수
+read_json_val() {
+    local file="$1"
+    local key="$2"
+    if [ -f "$file" ]; then
+        if command -v node >/dev/null 2>&1; then
+            node -e "try { const d=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); if(d['$key']!==undefined) console.log(d['$key']); } catch(e){}" "$file" 2>/dev/null
+        else
+            grep -E -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$file" 2>/dev/null | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/'
+        fi
+    fi
+}
+
+# Provider와 Model 간 호환성 검증 및 잘못된 모델 초기화
+validate_provider_model() {
+    if [ "$PROVIDER" = "claude" ]; then
+        if [[ "$MODEL" == *"gemini"* ]]; then
+            MODEL=""
+        fi
+    elif [ "$PROVIDER" = "agy" ]; then
+        if [[ "$MODEL" == *"claude"* || "$MODEL" == "opus" || "$MODEL" == "sonnet" || "$MODEL" == "haiku" || "$MODEL" == "fable" ]]; then
+            MODEL=""
+        fi
+    fi
+}
+
 # 설정 파일 읽기 함수
 load_config() {
     # 글로벌 설정 읽기
     if [ -f "$CONFIG_FILE" ]; then
-        LANGUAGE=$(cat "$CONFIG_FILE" | grep -o '"language":"[^"]*"' | cut -d'"' -f4)
-        MODEL=$(cat "$CONFIG_FILE" | grep -o '"model":"[^"]*"' | cut -d'"' -f4)
-        PROVIDER=$(cat "$CONFIG_FILE" | grep -o '"provider":"[^"]*"' | cut -d'"' -f4)
+        LANGUAGE=$(read_json_val "$CONFIG_FILE" "language")
+        MODEL=$(read_json_val "$CONFIG_FILE" "model")
+        PROVIDER=$(read_json_val "$CONFIG_FILE" "provider")
         [ -z "$LANGUAGE" ] && LANGUAGE="ko"
     else
         LANGUAGE=""
@@ -129,13 +162,20 @@ load_config() {
     # 프로젝트(로컬) 설정 읽기
     LOCAL_CONFIG_FILE="./.aicrc"
     if [ -f "$LOCAL_CONFIG_FILE" ]; then
-        LOCAL_LANG=$(cat "$LOCAL_CONFIG_FILE" | grep -o '"language":"[^"]*"' | cut -d'"' -f4)
-        LOCAL_MODEL=$(cat "$LOCAL_CONFIG_FILE" | grep -o '"model":"[^"]*"' | cut -d'"' -f4)
-        LOCAL_PROVIDER=$(cat "$LOCAL_CONFIG_FILE" | grep -o '"provider":"[^"]*"' | cut -d'"' -f4)
+        LOCAL_LANG=$(read_json_val "$LOCAL_CONFIG_FILE" "language")
+        LOCAL_MODEL=$(read_json_val "$LOCAL_CONFIG_FILE" "model")
+        LOCAL_PROVIDER=$(read_json_val "$LOCAL_CONFIG_FILE" "provider")
 
         [ -n "$LOCAL_LANG" ] && LANGUAGE="$LOCAL_LANG"
+        
+        # 로컬에서 provider가 지정되었고 글로벌과 다른 경우 모델 상속 차단
+        if [ -n "$LOCAL_PROVIDER" ]; then
+            if [ "$LOCAL_PROVIDER" != "${PROVIDER:-agy}" ] && [ -z "$LOCAL_MODEL" ]; then
+                MODEL=""
+            fi
+            PROVIDER="$LOCAL_PROVIDER"
+        fi
         [ -n "$LOCAL_MODEL" ] && MODEL="$LOCAL_MODEL"
-        [ -n "$LOCAL_PROVIDER" ] && PROVIDER="$LOCAL_PROVIDER"
     fi
 
     # CLI 플래그(--provider)가 지정된 경우 설정보다 우선.
@@ -147,6 +187,9 @@ load_config() {
 
     # 기본 provider (기존 사용자 호환)
     [ -z "$PROVIDER" ] && PROVIDER="agy"
+
+    # Provider와 Model 상호 호환성 검증
+    validate_provider_model
 }
 
 # 설정 파일 저장 함수
@@ -163,6 +206,37 @@ write_config_file() {
     [ -n "$model" ] && json="$json"',"model":"'"$model"'"'
     [ -n "$provider" ] && json="$json"',"provider":"'"$provider"'"'
     echo "$json}" > "$file"
+}
+
+# Git 브랜치 이름에서 이슈 번호/티켓 키 추출 (예: PROJ-123, #45, issue-12)
+detect_issue_key() {
+    local branch
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    [ -z "$branch" ] && return
+
+    # 1. JIRA 스타일: 대문자 알파벳 2~10자 + 하이픈 + 숫자 (예: PROJ-123)
+    local jira_key
+    jira_key=$(echo "$branch" | grep -o -E '[A-Z]{2,10}-[0-9]+' | head -1)
+    if [ -n "$jira_key" ]; then
+        echo "$jira_key"
+        return
+    fi
+
+    # 2. #숫자 스타일 (예: feature/#123-login)
+    local hash_key
+    hash_key=$(echo "$branch" | grep -o -E '#[0-9]+' | head -1)
+    if [ -n "$hash_key" ]; then
+        echo "$hash_key"
+        return
+    fi
+
+    # 3. issue-숫자 or gh-숫자 (예: issue-45, gh-88)
+    local issue_num
+    issue_num=$(echo "$branch" | grep -o -E '(issue|gh)-[0-9]+' | head -1 | grep -o -E '[0-9]+')
+    if [ -n "$issue_num" ]; then
+        echo "#$issue_num"
+        return
+    fi
 }
 
 # provider별 CLI 인자 구성 -> AI_ARGS 배열에 채움
@@ -257,9 +331,12 @@ msg() {
                 "fallback_editor") echo "🔧 Using standard editor for commit message..." ;;
                 "editor_prompt") echo "Write commit message in text editor?" ;;
                 "action_yes") echo "Yes" ;;
-                "action_no") echo "No" ;;
+                "action_no") echo "No (Cancel)" ;;
+                "action_regenerate") echo "Regenerate" ;;
                 "action_edit") echo "Edit message" ;;
                 "action_custom") echo "Write custom message" ;;
+                "regenerating_message") echo "🔄 Regenerating commit message..." ;;
+                "detected_issue") echo "💡 Detected branch issue key: $1" ;;
                 "editor_cancelled") echo "🚫 Cancelled." ;;
                 "editor_invalid") echo "Please enter y or n." ;;
                 "no_staged_files") echo "⚠️  No staged files found." ;;
@@ -376,9 +453,12 @@ msg() {
                 "fallback_editor") echo "🔧 일반 에디터로 커밋 메시지를 작성합니다..." ;;
                 "editor_prompt") echo "텍스트 에디터에서 커밋 메시지를 남기시겠습니까?" ;;
                 "action_yes") echo "네 (Yes)" ;;
-                "action_no") echo "아니오 (No)" ;;
+                "action_no") echo "취소 (Cancel)" ;;
+                "action_regenerate") echo "다시 생성 (Regenerate)" ;;
                 "action_edit") echo "메시지 수정 (Edit)" ;;
                 "action_custom") echo "직접 입력 (Custom)" ;;
+                "regenerating_message") echo "🔄 커밋 메시지를 다시 생성합니다..." ;;
+                "detected_issue") echo "💡 브랜치에서 이슈 키 감지됨: $1" ;;
                 "editor_cancelled") echo "🚫 취소되었습니다." ;;
                 "editor_invalid") echo "y 또는 n을 입력해주세요." ;;
                 "no_staged_files") echo "⚠️  staging된 파일이 없습니다." ;;
@@ -823,6 +903,7 @@ STAGED_DIFF=$(git diff --cached 2>/dev/null)
 UNSTAGED_DIFF=$(git diff 2>/dev/null)
 STATUS=$(git status --porcelain 2>/dev/null)
 STAGED_STATUS=$(git diff --cached --name-status 2>/dev/null)
+STAGED_STAT=$(git diff --cached --stat 2>/dev/null)
 
 # staged 파일이 있는지 확인
 if [ -z "$STAGED_DIFF" ]; then
@@ -849,28 +930,46 @@ fi
 DIFF="$STAGED_DIFF"
 echo -e "${CYAN}$(msg "analyzing_staged")${NC}"
 
+# 브랜치 이슈 키 감지
+ISSUE_KEY=$(detect_issue_key)
+if [ -n "$ISSUE_KEY" ]; then
+    echo -e "${CYAN}$(msg "detected_issue" "$ISSUE_KEY")${NC}"
+fi
+
 # 변경사항 분석
 ANALYSIS_TEXT="$DIFF"
 
-# 언어별 Gemini 프롬프트 생성
-if [ "$LANGUAGE" = "en" ]; then
-    DETAILED_MULTILINE_PROMPT="You are a git commit message generator. Analyze these git changes and generate a detailed multiline commit message.
+while true; do
+    # 언어별 Gemini 프롬프트 생성
+    if [ "$LANGUAGE" = "en" ]; then
+        ISSUE_HINT=""
+        if [ -n "$ISSUE_KEY" ]; then
+            ISSUE_HINT="
+BRANCH ISSUE/TICKET DETECTED:
+- The current git branch is associated with ticket: $ISSUE_KEY
+- Include this ticket key in the title (e.g. feat($ISSUE_KEY): ... or [$ISSUE_KEY] feat: ...)
+"
+        fi
+        DETAILED_MULTILINE_PROMPT="You are a git commit message generator. Analyze these git changes and generate a detailed multiline commit message.
 
 ANALYZE THE CHANGES CAREFULLY:
 - Look at file extensions and diff content to understand what changed
 - Identify if changes are: code improvements, style/formatting, documentation, features, or cleanup
 - Pay attention to deleted files, formatting changes, whitespace fixes
-
+$ISSUE_HINT
 GENERATE MESSAGE IN THIS FORMAT:
 
 TITLE (50 chars max):
-- Start with: feat: (new features), refactor: (code improvement), style: (formatting), docs: (documentation), chore: (cleanup/maintenance)
+- Start with: feat: (new features), fix: (bug fixes), refactor: (code improvement), style: (formatting), docs: (documentation), test: (tests), perf: (performance), chore: (cleanup/maintenance)
 - Brief summary in English
 
 BODY (after TWO blank lines):
 - filename: specific description of changes
 - IMPORTANT: TWO blank lines between each file
 - Use English language
+
+Git Diff Stat:
+$STAGED_STAT
 
 Git Status (Staged only):
 $STAGED_STATUS
@@ -891,24 +990,35 @@ src/components/LoadingSpinner.vue: Improved user experience during async operati
 CRITICAL: Use exactly TWO newlines between title and body, and TWO newlines between each file.
 Keep descriptions under 80 characters.
 Generate ONLY the commit message, no quotes:"
-else
-    DETAILED_MULTILINE_PROMPT="You are a git commit message generator. Analyze these git changes and generate a detailed multiline commit message.
+    else
+        ISSUE_HINT=""
+        if [ -n "$ISSUE_KEY" ]; then
+            ISSUE_HINT="
+브랜치 이슈/티켓 번호 감지됨:
+- 현재 git 브랜치는 티켓 $ISSUE_KEY 와 연관되어 있습니다.
+- 커밋 제목에 이 티켓 번호를 포함하세요 (예: feat($ISSUE_KEY): ... 또는 [$ISSUE_KEY] feat: ...)
+"
+        fi
+        DETAILED_MULTILINE_PROMPT="You are a git commit message generator. Analyze these git changes and generate a detailed multiline commit message.
 
 ANALYZE THE CHANGES CAREFULLY:
 - Look at file extensions and diff content to understand what changed
 - Identify if changes are: code improvements, style/formatting, documentation, features, or cleanup
 - Pay attention to deleted files, formatting changes, whitespace fixes
-
+$ISSUE_HINT
 GENERATE MESSAGE IN THIS FORMAT:
 
 TITLE (50 chars max):
-- Start with: feat: (new features), refactor: (code improvement), style: (formatting), docs: (documentation), chore: (cleanup/maintenance)
+- Start with: feat: (새 기능), fix: (버그 수정), refactor: (코드 리팩토링), style: (포맷팅), docs: (문서), test: (테스트), perf: (성능 개선), chore: (기타/유지보수)
 - Brief summary in Korean
 
 BODY (after TWO blank lines):
 - filename: specific description of changes
 - IMPORTANT: TWO blank lines between each file
 - Use Korean language
+
+Git Diff Stat:
+$STAGED_STAT
 
 Git Status (Staged only):
 $STAGED_STATUS
@@ -929,214 +1039,215 @@ src/components/LoadingSpinner.vue: 비동기 작업 중 사용자 경험 개선
 CRITICAL: Use exactly TWO newlines between title and body, and TWO newlines between each file.
 Keep descriptions under 80 characters.
 Generate ONLY the commit message, no quotes:"
-fi
+    fi
 
-# AI CLI 호출 시도
-AI_MESSAGE=""
+    # AI CLI 호출 시도
+    AI_MESSAGE=""
 
-if [ -z "$AI_MESSAGE" ]; then
-    # provider별 인자 구성
-    build_ai_args "$DETAILED_MULTILINE_PROMPT"
+    if [ -z "$AI_MESSAGE" ]; then
+        # provider별 인자 구성
+        build_ai_args "$DETAILED_MULTILINE_PROMPT"
 
-    # 백그라운드에서 AI CLI 실행
-    TEMP_OUTPUT="/tmp/aic_output_$$"
-    ("$PROVIDER" "${AI_ARGS[@]}" 2>&1 > "$TEMP_OUTPUT"; echo $? > "/tmp/aic_exit_$$") &
-    AGY_PID=$!
+        # 백그라운드에서 AI CLI 실행
+        TEMP_OUTPUT="/tmp/aic_output_$$"
+        ("$PROVIDER" "${AI_ARGS[@]}" 2>&1 > "$TEMP_OUTPUT"; echo $? > "/tmp/aic_exit_$$") &
+        AGY_PID=$!
 
-    # 브라일 애니메이션 시작
-    show_braille $AGY_PID
+        # 브라일 애니메이션 시작
+        show_braille $AGY_PID
 
-    # 프로세스 완료 대기
-    wait $AGY_PID
+        # 프로세스 완료 대기
+        wait $AGY_PID
 
-    # 결과 읽기
-    AGY_OUTPUT=$(cat "$TEMP_OUTPUT")
-    AGY_EXIT_CODE=$(cat "/tmp/aic_exit_$$")
+        # 결과 읽기
+        AGY_OUTPUT=$(cat "$TEMP_OUTPUT")
+        AGY_EXIT_CODE=$(cat "/tmp/aic_exit_$$")
 
-    # 임시 파일 정리
-    rm -f "$TEMP_OUTPUT" "/tmp/aic_exit_$$"
+        # 임시 파일 정리
+        rm -f "$TEMP_OUTPUT" "/tmp/aic_exit_$$"
 
-    # AI CLI 실행 실패 시 처리
-    if [ $AGY_EXIT_CODE -ne 0 ]; then
-        echo -e "${YELLOW}$(msg "provider_failed" "$PROVIDER")${NC}"
-        echo ""
-
-        editor_opts=("$(msg "action_yes")" "$(msg "action_no")")
-        interactive_menu "$(msg "editor_prompt")" editor_opts 0
-        if [ "$MENU_RESULT" = "0" ]; then
-            echo -e "${CYAN}$(msg "fallback_editor")${NC}"
+        # AI CLI 실행 실패 시 처리
+        if [ $AGY_EXIT_CODE -ne 0 ]; then
+            echo -e "${YELLOW}$(msg "provider_failed" "$PROVIDER")${NC}"
             echo ""
-            git commit
-            exit $?
-        else
-            echo -e "${CYAN}$(msg "editor_cancelled")${NC}"
-            exit 0
-        fi
-    else
-        # 불필요한 출력 제거하고 의미있는 출력 추출
-        AI_MESSAGE=$(echo "$AGY_OUTPUT" | grep -v "Loaded cached credentials" | grep -v "^$" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        
-        # 길이 체크 (최소 30자 이상이어야 함)
-        MSG_LENGTH=${#AI_MESSAGE}
-        if [ "$MSG_LENGTH" -lt 30 ]; then
-            echo -e "${YELLOW}⚠️  Message too short: $MSG_LENGTH chars. Trying simplified approach...${NC}"
-            
-            # 언어별 단순 프롬프트
-            if [ "$LANGUAGE" = "en" ]; then
-                SIMPLE_PROMPT="Generate a detailed English commit message with title and body for: $(echo "$STAGED_STATUS" | head -10 | tr '\n' ' ')"
-            else
-                SIMPLE_PROMPT="Generate a detailed Korean commit message with title and body for: $(echo "$STAGED_STATUS" | head -10 | tr '\n' ' ')"
-            fi
-            
-            # 단순 접근법도 애니메이션과 함께
-            TEMP_OUTPUT2="/tmp/aic_simple_$$"
 
-            build_ai_args "$SIMPLE_PROMPT"
-
-            ("$PROVIDER" "${AI_ARGS[@]}" 2>&1 > "$TEMP_OUTPUT2"; echo $? > "/tmp/aic_simple_exit_$$") &
-            SIMPLE_PID=$!
-
-            # 브라일 애니메이션으로 재시도
-            show_braille $SIMPLE_PID
-            wait $SIMPLE_PID
-
-            SIMPLE_OUTPUT=$(cat "$TEMP_OUTPUT2")
-            SIMPLE_EXIT_CODE=$(cat "/tmp/aic_simple_exit_$$")
-            rm -f "$TEMP_OUTPUT2" "/tmp/aic_simple_exit_$$"
-            
-            if [ $SIMPLE_EXIT_CODE -eq 0 ]; then
-                AI_MESSAGE=$(echo "$SIMPLE_OUTPUT" | grep -v "Loaded cached credentials" | grep -v "^$" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            else
-                echo -e "${YELLOW}⚠️  Simplified approach also failed. Using editor...${NC}"
-                
-                # 일반 git commit처럼 동작
+            editor_opts=("$(msg "action_yes")" "$(msg "action_no")")
+            interactive_menu "$(msg "editor_prompt")" editor_opts 0
+            if [ "$MENU_RESULT" = "0" ]; then
+                echo -e "${CYAN}$(msg "fallback_editor")${NC}"
+                echo ""
                 git commit
                 exit $?
+            else
+                echo -e "${CYAN}$(msg "editor_cancelled")${NC}"
+                exit 0
+            fi
+        else
+            # 불필요한 출력 제거하고 의미있는 출력 추출
+            AI_MESSAGE=$(echo "$AGY_OUTPUT" | grep -v "Loaded cached credentials" | grep -v "^$" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            
+            # 길이 체크 (최소 30자 이상이어야 함)
+            MSG_LENGTH=${#AI_MESSAGE}
+            if [ "$MSG_LENGTH" -lt 30 ]; then
+                echo -e "${YELLOW}⚠️  Message too short: $MSG_LENGTH chars. Trying simplified approach...${NC}"
+                
+                # 언어별 단순 프롬프트
+                if [ "$LANGUAGE" = "en" ]; then
+                    SIMPLE_PROMPT="Generate a detailed English commit message with title and body for: $(echo "$STAGED_STATUS" | head -10 | tr '\n' ' ')"
+                else
+                    SIMPLE_PROMPT="Generate a detailed Korean commit message with title and body for: $(echo "$STAGED_STATUS" | head -10 | tr '\n' ' ')"
+                fi
+                
+                # 단순 접근법도 애니메이션과 함께
+                TEMP_OUTPUT2="/tmp/aic_simple_$$"
+
+                build_ai_args "$SIMPLE_PROMPT"
+
+                ("$PROVIDER" "${AI_ARGS[@]}" 2>&1 > "$TEMP_OUTPUT2"; echo $? > "/tmp/aic_simple_exit_$$") &
+                SIMPLE_PID=$!
+
+                # 브라일 애니메이션으로 재시도
+                show_braille $SIMPLE_PID
+                wait $SIMPLE_PID
+
+                SIMPLE_OUTPUT=$(cat "$TEMP_OUTPUT2")
+                SIMPLE_EXIT_CODE=$(cat "/tmp/aic_simple_exit_$$")
+                rm -f "$TEMP_OUTPUT2" "/tmp/aic_simple_exit_$$"
+                
+                if [ $SIMPLE_EXIT_CODE -eq 0 ]; then
+                    AI_MESSAGE=$(echo "$SIMPLE_OUTPUT" | grep -v "Loaded cached credentials" | grep -v "^$" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                else
+                    echo -e "${YELLOW}⚠️  Simplified approach also failed. Using editor...${NC}"
+                    
+                    # 일반 git commit처럼 동작
+                    git commit
+                    exit $?
+                fi
             fi
         fi
     fi
-fi
 
-# AI 응답 처리
-if [ -n "$AI_MESSAGE" ] && [ "$AI_MESSAGE" != "Loaded cached credentials." ]; then
-    # 불필요한 텍스트 제거
-    AI_MESSAGE=$(echo "$AI_MESSAGE" | sed 's/^["'\'']\|["'\'']$//g' | sed 's/^\*\s*//' | sed 's/^-\s*//')
-    
-    # 메시지 형식 후처리 - 원하는 형식으로 변환
-    AI_MESSAGE=$(echo "$AI_MESSAGE" | awk '
-    BEGIN { 
-        title_done = 0; 
-        body_started = 0;
-        first_file = 1;
-    }
-    /^[a-z]+:/ { 
-        if (!title_done) {
-            print $0;
-            print "";
-            print "";
-            title_done = 1;
-            next;
-        }
-    }
-    /\.(ts|js|vue|md|json|sh):/ {
-        if (body_started && !first_file) {
-            print "";
-            print "";
-        }
-        print $0;
-        body_started = 1;
-        first_file = 0;
-        next;
-    }
-    {
-        if (title_done && $0 != "") {
-            if (!body_started && !match($0, /\.(ts|js|vue|md|json|sh):/)) {
-                print "";
-                print "";
-                body_started = 1;
-            }
-            if (match($0, /\.(ts|js|vue|md|json|sh):/)) {
-                if (!first_file) {
-                    print "";
-                    print "";
-                }
-                first_file = 0;
-            }
-            print $0;
-        }
-    }')
-    
-    echo ""
-    echo -e "${BLUE}============================================================${NC}"
-    echo -e "${GREEN}$(msg "ai_generated")${NC}"
-    echo -e "${BOLD}\"$AI_MESSAGE\"${NC}"
-    echo -e "${BLUE}============================================================${NC}"
-else
-    echo -e "${YELLOW}$(msg "ai_no_response")${NC}"
-    echo -e "${CYAN}$(msg "fallback_editor")${NC}"
-    echo ""
-    
-    # 일반 git commit처럼 동작
-    git commit
-    exit $?
-fi
-
-# 변경사항 요약 출력
-echo ""
-echo -e "${CYAN}$(msg "change_summary")${NC}"
-ADDED_FILES=$(echo "$STATUS" | grep "^??\|^A" | wc -l)
-MODIFIED_FILES=$(echo "$STATUS" | grep "^.M\|^M" | wc -l)
-DELETED_FILES=$(echo "$STATUS" | grep "^.D\|^D" | wc -l)
-
-[ "$ADDED_FILES" -gt 0 ] && echo -e "  ${GREEN}$(msg "new_files" "$ADDED_FILES")${NC}"
-[ "$MODIFIED_FILES" -gt 0 ] && echo -e "  ${YELLOW}$(msg "modified_files" "$MODIFIED_FILES")${NC}"
-[ "$DELETED_FILES" -gt 0 ] && echo -e "  ${RED}$(msg "deleted_files" "$DELETED_FILES")${NC}"
-echo ""
-
-commit_opts=("$(msg "action_yes")" "$(msg "action_no")" "$(msg "action_edit")" "$(msg "action_custom")")
-interactive_menu "$(msg "commit_prompt")" commit_opts 0
-
-case $MENU_RESULT in
-    0)
-        if git commit -m "$AI_MESSAGE"; then
-            echo -e "${GREEN}$(msg "commit_success")${NC}"
-        else
-            echo -e "${RED}$(msg "commit_failed")${NC}"
-        fi
-        ;;
-    1)
-        echo -e "${YELLOW}$(msg "commit_cancelled")${NC}"
-        exit 0
-        ;;
-    2)
-        TEMP_FILE="/tmp/edit_commit_$$.txt"
-        echo "$AI_MESSAGE" > "$TEMP_FILE"
-        echo -e "${CYAN}$(msg "editor_starting")${NC}"
-        ${EDITOR:-vi} "$TEMP_FILE"
-        EDITED_MESSAGE=$(cat "$TEMP_FILE" | head -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        rm -f "$TEMP_FILE"
+    # AI 응답 처리
+    if [ -n "$AI_MESSAGE" ] && [ "$AI_MESSAGE" != "Loaded cached credentials." ]; then
+        # 불필요한 텍스트 제거
+        AI_MESSAGE=$(echo "$AI_MESSAGE" | sed 's/^["'\'']\|["'\'']$//g' | sed 's/^\*\s*//' | sed 's/^-\s*//')
         
-        if [ -n "$EDITED_MESSAGE" ]; then
-            if git commit -m "$EDITED_MESSAGE"; then
-                echo -e "${GREEN}$(msg "edit_success")${NC}"
+        # 메시지 형식 후처리 - 원하는 형식으로 변환
+        AI_MESSAGE=$(echo "$AI_MESSAGE" | awk '
+        BEGIN { 
+            title_done = 0; 
+            body_started = 0;
+            first_file = 1;
+            file_pattern = "^([a-zA-Z0-9_./-]+(\\.[a-zA-Z0-9_-]+|/)|Dockerfile|Makefile|LICENSE|README|CHANGELOG):[[:space:]]*";
+        }
+        /^[a-zA-Z]+(\([^)]+\))?:/ { 
+            if (!title_done) {
+                print $0;
+                print "";
+                print "";
+                title_done = 1;
+                next;
+            }
+        }
+        {
+            if (title_done && $0 != "") {
+                is_file = match($0, file_pattern);
+                if (is_file) {
+                    if (body_started && !first_file) {
+                        print "";
+                        print "";
+                    }
+                    body_started = 1;
+                    first_file = 0;
+                } else if (!body_started) {
+                    print "";
+                    print "";
+                    body_started = 1;
+                }
+                print $0;
+            }
+        }')
+        
+        echo ""
+        echo -e "${BLUE}============================================================${NC}"
+        echo -e "${GREEN}$(msg "ai_generated")${NC}"
+        echo -e "${BOLD}\"$AI_MESSAGE\"${NC}"
+        echo -e "${BLUE}============================================================${NC}"
+    else
+        echo -e "${YELLOW}$(msg "ai_no_response")${NC}"
+        echo -e "${CYAN}$(msg "fallback_editor")${NC}"
+        echo ""
+        
+        # 일반 git commit처럼 동작
+        git commit
+        exit $?
+    fi
+
+    # 변경사항 요약 출력
+    echo ""
+    echo -e "${CYAN}$(msg "change_summary")${NC}"
+    ADDED_FILES=$(echo "$STATUS" | grep "^??\|^A" | wc -l)
+    MODIFIED_FILES=$(echo "$STATUS" | grep "^.M\|^M" | wc -l)
+    DELETED_FILES=$(echo "$STATUS" | grep "^.D\|^D" | wc -l)
+
+    [ "$ADDED_FILES" -gt 0 ] && echo -e "  ${GREEN}$(msg "new_files" "$ADDED_FILES")${NC}"
+    [ "$MODIFIED_FILES" -gt 0 ] && echo -e "  ${YELLOW}$(msg "modified_files" "$MODIFIED_FILES")${NC}"
+    [ "$DELETED_FILES" -gt 0 ] && echo -e "  ${RED}$(msg "deleted_files" "$DELETED_FILES")${NC}"
+    echo ""
+
+    commit_opts=("$(msg "action_yes")" "$(msg "action_regenerate")" "$(msg "action_edit")" "$(msg "action_custom")" "$(msg "action_no")")
+    interactive_menu "$(msg "commit_prompt")" commit_opts 0
+
+    case $MENU_RESULT in
+        0)
+            if git commit -m "$AI_MESSAGE"; then
+                echo -e "${GREEN}$(msg "commit_success")${NC}"
             else
                 echo -e "${RED}$(msg "commit_failed")${NC}"
             fi
-        else
-            echo -e "${YELLOW}$(msg "edit_cancelled")${NC}"
-        fi
-        ;;
-    3)
-        read -p "$(echo -e "${CYAN}$(msg "custom_message")${NC} ")" CUSTOM_MESSAGE
-        if [ -n "$CUSTOM_MESSAGE" ]; then
-            if git commit -m "$CUSTOM_MESSAGE"; then
-                echo -e "${GREEN}$(msg "custom_success")${NC}"
+            break
+            ;;
+        1)
+            echo ""
+            echo -e "${CYAN}$(msg "regenerating_message")${NC}"
+            echo ""
+            continue
+            ;;
+        2)
+            TEMP_FILE="/tmp/aic_edit_commit_$$.txt"
+            echo "$AI_MESSAGE" > "$TEMP_FILE"
+            echo -e "${CYAN}$(msg "editor_starting")${NC}"
+            ${EDITOR:-vi} "$TEMP_FILE"
+            
+            if [ -s "$TEMP_FILE" ] && grep -q '[^[:space:]]' "$TEMP_FILE"; then
+                if git commit -F "$TEMP_FILE"; then
+                    echo -e "${GREEN}$(msg "edit_success")${NC}"
+                else
+                    echo -e "${RED}$(msg "commit_failed")${NC}"
+                fi
             else
+                echo -e "${YELLOW}$(msg "edit_cancelled")${NC}"
+            fi
+            rm -f "$TEMP_FILE"
+            break
+            ;;
+        3)
+            read -p "$(echo -e "${CYAN}$(msg "custom_message")${NC} ")" CUSTOM_MESSAGE
+            if [ -n "$CUSTOM_MESSAGE" ]; then
+                if git commit -m "$CUSTOM_MESSAGE"; then
+                    echo -e "${GREEN}$(msg "custom_success")${NC}"
+                else
+                    echo -e "${RED}$(msg "commit_failed")${NC}"
+                fi
+            else
+                echo -e "${YELLOW}$(msg "empty_message")${NC}"
                 echo -e "${RED}$(msg "commit_failed")${NC}"
             fi
-        else
-            echo -e "${YELLOW}$(msg "empty_message")${NC}"
-            echo -e "${RED}$(msg "commit_failed")${NC}"
-        fi
-        ;;
-esac
+            break
+            ;;
+        4)
+            echo -e "${YELLOW}$(msg "commit_cancelled")${NC}"
+            exit 0
+            ;;
+    esac
+done

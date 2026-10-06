@@ -4,7 +4,12 @@
 
 [English](README.md) | **한국어**
 
-Google Gemini CLI (Gemini 2.5 Flash)를 사용하여 **한국어/영어 지원**하는 AI 커밋 메시지 생성기입니다.
+**Antigravity CLI (Gemini)** 및 **Claude Code CLI**를 지원하며 **한국어/영어**로 커밋 메시지를 자동 생성하는 도구입니다.
+
+- 🤖 **멀티 AI CLI 지원**: Antigravity (`agy`)와 Claude Code (`claude`) 중 자유롭게 선택
+- 🔄 **대화형 재생성 (Regenerate)**: 생성된 메시지가 마음에 들지 않을 때 원클릭으로 다시 생성
+- 🎫 **브랜치 이슈 키 자동 감지**: 브랜치명에서 Jira/GitHub 이슈 번호(`PROJ-123`, `#45` 등)를 추출해 커밋 제목에 반영
+- 📝 **Conventional Commits 규격**: 제목 + 파일별 상세 설명 형식 자동 포맷팅
 
 ## 📦 설치
 
@@ -74,22 +79,16 @@ aic --agy               # 이번 실행에만 agy 사용
 
 - Node.js 16.0.0+
 - Git 2.0+
-- **Gemini CLI** (설치: `npm install -g @google/gemini-cli`)
-- **Google 계정** (개인 계정 권장)
-
-## 🌐 언어 지원
-
-최초 실행 시 언어 선택 화면이 자동으로 표시됩니다 (한국어/영어).
-`aic --configure`로 언제든지 변경 가능합니다.
+- 다음 지원 AI CLI 중 하나 이상 설치 및 로그인:
+  - **Antigravity CLI (`agy`)** (기본값, Gemini)
+  - **Claude Code CLI (`claude`)**
 
 ## 🛠️ 설정
 
-```bash
-# Gemini CLI 설치
-npm install -g @google/gemini-cli
+사용하기 전 원하는 AI CLI를 설치하고 로그인해주세요:
 
-gemini # 이후 Google 계정으로 로그인
-```
+- **Antigravity (Gemini):** `agy` CLI 설치 및 로그인 확인
+- **Claude Code:** `claude` CLI 설치 및 로그인 확인 (`npm install -g @anthropic-ai/claude-code`)
 
 ## 🎯 예시
 

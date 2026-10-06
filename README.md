@@ -4,7 +4,12 @@
 
 **English** | [한국어](README.ko.md)
 
-AI-powered commit message generator using Google Gemini CLI (Gemini 2.5 Flash) with **Korean/English language support**.
+AI-powered commit message generator supporting **Antigravity CLI (Gemini)** and **Claude Code CLI** with **Korean/English language support**.
+
+- 🤖 **Multi-Provider**: Seamlessly switch between Antigravity (`agy`) and Claude Code (`claude`)
+- 🔄 **Interactive Regenerate**: Retry commit message generation anytime
+- 🎫 **Smart Issue Detection**: Extracts Jira/GitHub issue keys from git branches automatically
+- 📝 **Conventional Commits**: Clean title and file-by-file detailed body format
 
 ## 📦 Installation
 
@@ -75,22 +80,16 @@ project config taking precedence.
 
 - Node.js 16.0.0+
 - Git 2.0+
-- **Gemini CLI** (install: `npm install -g @google/gemini-cli`)
-- **Google account** (personal account recommended)
-
-## 🌐 Language Support
-
-First run automatically prompts for language selection (Korean/English).
-Change anytime with `aic --configure`.
+- At least one supported AI CLI installed and authenticated:
+  - **Antigravity CLI (`agy`)** (default, Gemini)
+  - **Claude Code CLI (`claude`)**
 
 ## 🛠️ Setup
 
-```bash
-# Install Gemini CLI
-npm install -g @google/gemini-cli
+Ensure your preferred AI CLI is installed and authenticated before running `aic`:
 
-gemini # Authenticate with Google Account
-```
+- **Antigravity (Gemini):** Ensure `agy` CLI is accessible in your `PATH`.
+- **Claude Code:** Ensure `claude` CLI is accessible in your `PATH` (`npm install -g @anthropic-ai/claude-code`).
 
 ## 🎯 Examples
 

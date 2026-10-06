@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2025-08-14
+
+### Added
+
+- 🤖 **Multi-Provider Support**: Choose between Antigravity (`agy`) and Claude Code (`claude`) CLI
+- 🎯 **Interactive TUI Selection Menu**: Arrow keys and numeric input navigation
+- 🔄 **Message Regeneration**: Added interactive `Regenerate` option to retry AI generation on demand
+- 🎫 **Branch Issue / Ticket Detection**: Auto-detects issue keys from branch names (`PROJ-123`, `#45`, `issue-12`) and includes them in commit titles
+- 📊 **Diff Stat Optimization**: Includes `git diff --stat` in AI context for superior change analysis on large diffs
+- ⚙️ **Project-level Configuration**: Local config support via `.aicrc` overriding global settings
+- 📝 **Expanded Conventional Commits**: Added `fix:`, `test:`, and `perf:` types to AI prompt guidelines
+- 🛡️ **Signal & Exit Handling**: Auto-restore terminal cursor and clean up temporary files via `trap`
+
+### Fixed
+
+- 🐛 **Multi-line Commit Retention**: Fixed issue where editor (`Edit message`) only committed the first line
+- 🔍 **General File Parsing**: Replaced hardcoded extension regex in awk to support all programming languages
+- 🔧 **Robust JSON Configuration**: Safe JSON parsing supporting whitespace variations
+- 💻 **Terminal Cursor Restoration**: Fixed cursor remaining hidden after interrupting interactive menu
+
 ## [1.0.7] - 2024-12-19
 
 ### Changed
