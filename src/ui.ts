@@ -179,6 +179,7 @@ export async function interactiveMenu(
       if (process.stdin.setRawMode) {
         process.stdin.setRawMode(isRaw);
       }
+      process.stdin.pause();
       showCursor();
     }
 

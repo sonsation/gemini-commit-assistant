@@ -354,12 +354,14 @@ async function main() {
 
     // 0: Yes
     if (menuResult === 0) {
-      if (commitWithMessage(formattedMessage)) {
+      const ok = commitWithMessage(formattedMessage);
+      if (ok) {
         console.log(`${c.green}${t(lang, 'commit_success')}${c.reset}`);
+        process.exit(0);
       } else {
         console.log(`${c.red}${t(lang, 'commit_failed')}${c.reset}`);
+        process.exit(1);
       }
-      break;
     }
 
     // 1: Regenerate
@@ -377,6 +379,7 @@ async function main() {
       const editor = process.env.EDITOR || 'vi';
       spawnSync(editor, [tmpFile], { stdio: 'inherit' });
 
+      let exitCode = 0;
       if (fs.existsSync(tmpFile)) {
         const editedContent = fs.readFileSync(tmpFile, 'utf8').trim();
         if (editedContent.length > 0) {
@@ -384,6 +387,7 @@ async function main() {
             console.log(`${c.green}${t(lang, 'edit_success')}${c.reset}`);
           } else {
             console.log(`${c.red}${t(lang, 'commit_failed')}${c.reset}`);
+            exitCode = 1;
           }
         } else {
           console.log(`${c.yellow}${t(lang, 'edit_cancelled')}${c.reset}`);
@@ -394,7 +398,7 @@ async function main() {
           // 무시
         }
       }
-      break;
+      process.exit(exitCode);
     }
 
     // 3: Custom message
@@ -403,14 +407,16 @@ async function main() {
       if (custom.length > 0) {
         if (commitWithMessage(custom)) {
           console.log(`${c.green}${t(lang, 'custom_success')}${c.reset}`);
+          process.exit(0);
         } else {
           console.log(`${c.red}${t(lang, 'commit_failed')}${c.reset}`);
+          process.exit(1);
         }
       } else {
         console.log(`${c.yellow}${t(lang, 'empty_message')}${c.reset}`);
         console.log(`${c.red}${t(lang, 'commit_failed')}${c.reset}`);
+        process.exit(1);
       }
-      break;
     }
 
     // 4: Cancel
@@ -419,6 +425,7 @@ async function main() {
       process.exit(0);
     }
   }
+  process.exit(0);
 }
 
 main().catch((err) => {
