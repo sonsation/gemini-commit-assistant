@@ -3,12 +3,15 @@
   "version": "1.0.8",
   "description": "AI-powered commit message generator using Gemini CLI",
   "bin": {
-    "aic": "./bin/aic",
-    "ai-commit": "./bin/aic"
+    "aic": "./dist/cli.js",
+    "ai-commit": "./dist/cli.js"
   },
   "scripts": {
-    "test": "bash -n bin/aic",
-    "prepublishOnly": "chmod +x bin/aic && chmod +x bin/postinstall.js",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build && chmod +x dist/cli.js && chmod +x bin/postinstall.js",
     "postinstall": "node bin/postinstall.js"
   },
   "keywords": [
@@ -25,10 +28,9 @@
   "engines": {
     "node": ">=16.0.0"
   },
-  "peerDependencies": {},
   "files": [
-    "bin/aic",
-    "bin/postinstall.js",
+    "dist",
+    "bin",
     "README.md",
     "README.ko.md",
     "LICENSE"
@@ -40,5 +42,10 @@
   "bugs": {
     "url": "https://github.com/c17an/gemini-commit-assistant/issues"
   },
-  "homepage": "https://github.com/c17an/gemini-commit-assistant#readme"
+  "homepage": "https://github.com/c17an/gemini-commit-assistant#readme",
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2"
+  }
 }

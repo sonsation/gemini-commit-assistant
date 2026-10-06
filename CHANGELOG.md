@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ⚡ **TypeScript Full Migration**: Completely rewrote the codebase from Bash to TypeScript with zero-runtime-dependencies standalone bundle (compiled in 6ms via `tsup`). Delivers 100% cross-platform compatibility (macOS/Linux/Windows).
 - 🤖 **Multi-Provider Support**: Choose between Antigravity (`agy`) and Claude Code (`claude`) CLI
 - 🎯 **Interactive TUI Selection Menu**: Arrow keys and numeric input navigation
 - 🔄 **Message Regeneration**: Added interactive `Regenerate` option to retry AI generation on demand

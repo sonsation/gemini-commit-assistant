@@ -4,10 +4,10 @@ screenshot.gif
 *.jpg
 *.jpeg
 
-# Korean README (keep only English for npm)
-README.ko.md
-
-# Development files
+# Development source files
+src/
+tsconfig.json
+tsup.config.ts
 CHANGELOG.md
 publish.sh
 .git/
@@ -27,12 +27,8 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# Test files
+# Test & coverage
 test/
-*.test.js
-*.spec.js
-
-# Build artifacts
-dist/
-build/
-coverage/ 
+*.test.*
+*.spec.*
+coverage/
