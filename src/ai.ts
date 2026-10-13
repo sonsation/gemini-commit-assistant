@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'child_process';
+import os from 'os';
 import { Provider } from './types';
 
 export function isCommandAvailable(cmd: string): boolean {
@@ -32,14 +33,17 @@ export async function executeAiCli(params: {
   }
 
   if (provider === 'claude') {
-    args.push('-p', prompt);
+    // 커스텀 스킬/규칙/플러그인 및 도구 호출 배제
+    args.push('--safe-mode', '--tools', '', '-p', prompt);
   } else {
-    // agy: --print 가 프롬프트를 값으로 받음
-    args.push('--print', prompt);
+    // agy: 커스텀 스킬 및 슬래시 커맨드 확장 비활성화
+    // --print 가 프롬프트를 값으로 받음
+    args.push('--disable-slash-commands', '--print', prompt);
   }
 
   return new Promise<AiExecutionResult>((resolve) => {
     const child = spawn(provider, args, {
+      cwd: os.tmpdir(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -95,7 +99,7 @@ export async function fetchAvailableModels(provider: Provider): Promise<ModelIte
 
   // agy models 조회
   try {
-    const res = spawnSync('agy', ['models'], { encoding: 'utf8' });
+    const res = spawnSync('agy', ['models'], { cwd: os.tmpdir(), encoding: 'utf8' });
     if (res.status === 0 && res.stdout) {
       const lines = res.stdout.split('\n').filter(Boolean);
       const list: ModelItem[] = [];
