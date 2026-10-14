@@ -2,10 +2,18 @@ import { spawn, spawnSync } from 'child_process';
 import os from 'os';
 import { Provider } from './types';
 
+export const AI_ENV = {
+  ...process.env,
+  LANG: 'C.UTF-8',
+  LC_ALL: 'C.UTF-8',
+  PYTHONIOENCODING: 'utf-8',
+  PYTHONUTF8: '1',
+};
+
 export function isCommandAvailable(cmd: string): boolean {
   try {
     const checker = process.platform === 'win32' ? 'where' : 'which';
-    const res = spawnSync(checker, [cmd], { stdio: 'ignore' });
+    const res = spawnSync(checker, [cmd], { stdio: 'ignore', env: AI_ENV });
     return res.status === 0;
   } catch {
     return false;
@@ -15,7 +23,11 @@ export function isCommandAvailable(cmd: string): boolean {
 export function resolveExecutable(cmd: string): string {
   if (process.platform === 'win32') {
     try {
-      const res = spawnSync('where', [cmd], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const res = spawnSync('where', [cmd], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: AI_ENV,
+      });
       if (res.status === 0 && res.stdout) {
         const lines = res.stdout
           .trim()
@@ -72,17 +84,21 @@ export async function executeAiCli(params: {
     const child = spawn(executable, args, {
       cwd: os.tmpdir(),
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: AI_ENV,
     });
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
 
     let stdout = '';
     let stderr = '';
 
-    child.stdout.on('data', (d) => {
-      stdout += d.toString();
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
     });
 
-    child.stderr.on('data', (d) => {
-      stderr += d.toString();
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
     });
 
     child.on('error', () => {
@@ -127,7 +143,11 @@ export async function fetchAvailableModels(provider: Provider): Promise<ModelIte
   // agy models 조회
   try {
     const executable = resolveExecutable('agy');
-    const res = spawnSync(executable, ['models'], { cwd: os.tmpdir(), encoding: 'utf8' });
+    const res = spawnSync(executable, ['models'], {
+      cwd: os.tmpdir(),
+      encoding: 'utf8',
+      env: AI_ENV,
+    });
     if (res.status === 0 && res.stdout) {
       const lines = res.stdout.split('\n').filter(Boolean);
       const list: ModelItem[] = [];

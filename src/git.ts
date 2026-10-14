@@ -1,9 +1,31 @@
 import { execSync, spawnSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { GitChangeStats } from './types';
+
+const GIT_ENV = {
+  ...process.env,
+  LANG: 'C.UTF-8',
+  LC_ALL: 'C.UTF-8',
+};
+
+const GIT_COMMON_ARGS = [
+  '-c',
+  'core.quotepath=false',
+  '-c',
+  'i18n.commitEncoding=utf-8',
+  '-c',
+  'i18n.logOutputEncoding=utf-8',
+];
 
 function runGit(args: string[]): string {
   try {
-    const res = spawnSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const res = spawnSync('git', [...GIT_COMMON_ARGS, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: GIT_ENV,
+    });
     if (res.status === 0) {
       return res.stdout.trim();
     }
@@ -15,8 +37,9 @@ function runGit(args: string[]): string {
 
 export function isInsideGitRepo(): boolean {
   try {
-    const res = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    const res = spawnSync('git', [...GIT_COMMON_ARGS, 'rev-parse', '--is-inside-work-tree'], {
       stdio: 'ignore',
+      env: GIT_ENV,
     });
     return res.status === 0;
   } catch {
@@ -26,7 +49,10 @@ export function isInsideGitRepo(): boolean {
 
 export function stageAll(): boolean {
   try {
-    const res = spawnSync('git', ['add', '.'], { stdio: 'inherit' });
+    const res = spawnSync('git', [...GIT_COMMON_ARGS, 'add', '.'], {
+      stdio: 'inherit',
+      env: GIT_ENV,
+    });
     return res.status === 0;
   } catch {
     return false;
@@ -105,18 +131,35 @@ export function getChangeStats(): GitChangeStats {
   return { added, modified, deleted };
 }
 
-export function commitWithMessage(msg: string): boolean {
-  const res = spawnSync('git', ['commit', '-m', msg], { stdio: 'inherit' });
+export function commitWithFile(filePath: string): boolean {
+  const res = spawnSync('git', [...GIT_COMMON_ARGS, 'commit', '-F', filePath], {
+    stdio: 'inherit',
+    env: GIT_ENV,
+  });
   return res.status === 0;
 }
 
-export function commitWithFile(filePath: string): boolean {
-  const res = spawnSync('git', ['commit', '-F', filePath], { stdio: 'inherit' });
-  return res.status === 0;
+export function commitWithMessage(msg: string): boolean {
+  const tmpFile = path.join(os.tmpdir(), `aic_msg_${Date.now()}_${process.pid}.txt`);
+  try {
+    fs.writeFileSync(tmpFile, msg, 'utf8');
+    return commitWithFile(tmpFile);
+  } finally {
+    try {
+      if (fs.existsSync(tmpFile)) {
+        fs.unlinkSync(tmpFile);
+      }
+    } catch {
+      // 무시
+    }
+  }
 }
 
 export function commitInteractive(): number {
-  const res = spawnSync('git', ['commit'], { stdio: 'inherit' });
+  const res = spawnSync('git', [...GIT_COMMON_ARGS, 'commit'], {
+    stdio: 'inherit',
+    env: GIT_ENV,
+  });
   return res.status ?? 1;
 }
 

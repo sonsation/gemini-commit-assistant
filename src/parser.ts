@@ -10,11 +10,11 @@ export function formatCommitMessage(rawMessage: string, issueKey?: string | null
     .trim();
 
   // 2. 줄 단위 분리 및 빈 줄 제거
-  const lines = cleaned.split('\n').map((l) => l.trim()).filter(Boolean);
+  const lines = cleaned.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length === 0) return '';
 
   const titleRegex = /^[a-zA-Z]+(\([^)]+\))?:/;
-  const fileRegex = /^([a-zA-Z0-9_./-]+(?:\.[a-zA-Z0-9_-]+|\/)|Dockerfile|Makefile|LICENSE|README|CHANGELOG):/i;
+  const fileRegex = /^([^\s:\0-\x1f]+(?:\.[a-zA-Z0-9_-]+|\/)|Dockerfile|Makefile|LICENSE|README|CHANGELOG[^\s:]*):/iu;
 
   let title = '';
   const bodyFiles: string[] = [];
@@ -22,14 +22,15 @@ export function formatCommitMessage(rawMessage: string, issueKey?: string | null
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const lineWithoutBullet = line.replace(/^[-*•]\s+/, '');
 
     if (!title && titleRegex.test(line)) {
       title = line;
       continue;
     }
 
-    if (fileRegex.test(line)) {
-      bodyFiles.push(line);
+    if (fileRegex.test(lineWithoutBullet)) {
+      bodyFiles.push(lineWithoutBullet);
       continue;
     }
 

@@ -34,22 +34,43 @@ process.on('SIGTERM', () => {
 });
 
 /**
- * 단일 문자의 터미널 표시 너비 계산 (한글/전각/이모지 등은 2칸)
+ * 단일 문자의 터미널 표시 너비 계산 (한글/전각/이모지 등은 2칸, 조합문자/변형선택자는 0칸)
  */
-function getCharWidth(char: string): number {
+export function getCharWidth(char: string): number {
   const code = char.codePointAt(0);
   if (!code) return 0;
+  // 제어 문자
   if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return 0;
+
+  // 0칸: 결합 분음 부호, 제로 너비 문자, 이모지 변형 선택자 (Variation Selector)
   if (
-    (code >= 0x1100 && code <= 0x115f) || // 한글 자모
-    (code >= 0x2e80 && code <= 0xa4cf) || // CJK 부수 등
-    (code >= 0xac00 && code <= 0xd7a3) || // 한글 음절
+    (code >= 0x0300 && code <= 0x036f) || // Combining Diacritical Marks
+    (code >= 0xfe00 && code <= 0xfe0f) || // Variation Selectors
+    (code >= 0xe0100 && code <= 0xe01ef) || // Variation Selectors Supplement
+    code === 0x200b || // Zero Width Space
+    code === 0x200c || // Zero Width Non-Joiner
+    code === 0x200d || // Zero Width Joiner
+    code === 0xfeff // Zero Width No-Break Space (BOM)
+  ) {
+    return 0;
+  }
+
+  // 2칸: 한글, CJK, 전각 문자, 기호 및 이모지
+  if (
+    (code >= 0x1100 && code <= 0x11ff) || // 한글 자모
+    (code >= 0x3130 && code <= 0x318f) || // 한글 호환 자모 (ㄱ, ㄴ, ㅏ 등)
+    (code >= 0xa960 && code <= 0xa97f) || // 한글 자모 확장-A
+    (code >= 0xac00 && code <= 0xd7a3) || // 한글 음절 (가~힣)
+    (code >= 0xd7b0 && code <= 0xd7ff) || // 한글 자모 확장-B
+    (code >= 0x2e80 && code <= 0xa4cf) || // CJK 부수 및 한자
     (code >= 0xf900 && code <= 0xfaff) || // CJK 호환 한자
     (code >= 0xfe10 && code <= 0xfe19) || // 세로 형태
     (code >= 0xfe30 && code <= 0xfe6f) || // CJK 호환 형태
-    (code >= 0xff00 && code <= 0xff60) || // 전각 문자
+    (code >= 0xff01 && code <= 0xff60) || // 전각 문자
     (code >= 0xffe0 && code <= 0xffe6) || // 전각 기호
-    (code >= 0x1f000 && code <= 0x1faff) || // 이모지 및 기호
+    (code >= 0x2600 && code <= 0x27bf) || // 기타 기호 및 딩뱃 (⚠️, ✅, ❌, ✏️ 등)
+    (code >= 0x2b50 && code <= 0x2b55) || // 별, 동그라미 등
+    (code >= 0x1f000 && code <= 0x1faff) || // 각종 이모지 및 픽토그램 (🤖, 📦, 💡, 🔄 등)
     (code >= 0x20000 && code <= 0x3fffd)
   ) {
     return 2;
@@ -58,7 +79,7 @@ function getCharWidth(char: string): number {
 }
 
 /**
- * 터미널 너비에 맞게 문자열 자르기 (자동 줄바꿈 방지)
+ * 터미널 너비에 맞게 문자열 자르기 (자동 줄바꿈 및 글자 깨짐 방지)
  */
 export function truncateToWidth(str: string, maxWidth: number, ellipsis = '...'): string {
   const clean = str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
@@ -69,6 +90,10 @@ export function truncateToWidth(str: string, maxWidth: number, ellipsis = '...')
   if (currentWidth <= maxWidth) return str;
 
   const ellipsisWidth = ellipsis.length;
+  if (maxWidth <= ellipsisWidth) {
+    return ellipsis.slice(0, Math.max(0, maxWidth));
+  }
+
   let truncated = '';
   let width = 0;
   for (const char of clean) {

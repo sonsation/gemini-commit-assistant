@@ -4,6 +4,21 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawnSync } from 'child_process';
+
+// 콘솔 및 하위 프로세스 UTF-8 인코딩 보장
+if (process.platform === 'win32') {
+  try {
+    spawnSync('chcp.com', ['65001'], { stdio: 'ignore' });
+  } catch {
+    // 무시
+  }
+}
+
+if (!process.env.LANG) process.env.LANG = 'C.UTF-8';
+if (!process.env.LC_ALL) process.env.LC_ALL = 'C.UTF-8';
+process.env.PYTHONIOENCODING = 'utf-8';
+process.env.PYTHONUTF8 = '1';
+
 import {
   loadConfig,
   saveConfig,
@@ -377,12 +392,18 @@ async function main() {
 
       console.log(`${c.cyan}${t(lang, 'editor_starting')}${c.reset}`);
       const editor = process.env.EDITOR || (process.platform === 'win32' ? 'notepad' : 'vi');
-      spawnSync(editor, [tmpFile], { stdio: 'inherit' });
+      spawnSync(editor, [tmpFile], {
+        stdio: 'inherit',
+        env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
+      });
 
       let exitCode = 0;
       if (fs.existsSync(tmpFile)) {
-        const editedContent = fs.readFileSync(tmpFile, 'utf8').trim();
+        let editedContent = fs.readFileSync(tmpFile, 'utf8').trim();
+        // 에디터에서 UTF-8 BOM을 붙여 저장했을 경우 BOM 제거
+        editedContent = editedContent.replace(/^\uFEFF/, '').trim();
         if (editedContent.length > 0) {
+          fs.writeFileSync(tmpFile, editedContent, 'utf8');
           if (commitWithFile(tmpFile)) {
             console.log(`${c.green}${t(lang, 'edit_success')}${c.reset}`);
           } else {

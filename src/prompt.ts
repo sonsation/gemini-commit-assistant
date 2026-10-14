@@ -8,7 +8,13 @@ export function createDetailedPrompt(params: {
   issueKey?: string | null;
 }): string {
   const { language, stagedStatus, stagedStat, diff, issueKey } = params;
-  const analysisSnippet = diff.split('\n').slice(0, 2000).join('\n');
+  // Windows 및 터미널 인자 길이 제한(32KB)을 고려한 안전한 diff 절삭
+  const maxDiffLength = process.platform === 'win32' ? 12000 : 25000;
+  let truncatedDiff = diff || '';
+  if (truncatedDiff.length > maxDiffLength) {
+    truncatedDiff = truncatedDiff.slice(0, maxDiffLength) + '\n... (diff truncated)';
+  }
+  const analysisSnippet = truncatedDiff.split('\n').slice(0, 500).join('\n');
 
   if (language === 'en') {
     let issueHint = '';

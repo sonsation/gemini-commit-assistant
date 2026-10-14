@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 
+if (process.platform === 'win32') {
+  try {
+    const { spawnSync } = require('child_process');
+    spawnSync('chcp.com', ['65001'], { stdio: 'ignore' });
+  } catch {}
+}
+
 const colors = {
   reset: "\x1b[0m",
   bold: "\x1b[1m",
@@ -16,8 +23,15 @@ const colors = {
 const { reset, bold, dim, green, cyan, yellow, blue, magenta } = colors;
 
 // 시스템 언어 감지 (한국어 우선)
-const locale = process.env.LANG || process.env.LC_ALL || "en";
-const isKorean = locale.includes("ko") || locale.includes("kr");
+let locale = process.env.LANG || process.env.LC_ALL || "";
+if (!locale) {
+  try {
+    locale = Intl.DateTimeFormat().resolvedOptions().locale || "";
+  } catch {
+    locale = "";
+  }
+}
+const isKorean = locale.toLowerCase().includes("ko") || locale.toLowerCase().includes("kr");
 
 if (isKorean) {
   console.log(`

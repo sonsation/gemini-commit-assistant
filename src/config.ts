@@ -11,7 +11,7 @@ export const LOCAL_CONFIG_FILE = path.resolve(process.cwd(), '.aicrc');
 function readJsonFile<T>(filePath: string): T | null {
   try {
     if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf8');
+      const content = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
       return JSON.parse(content) as T;
     }
   } catch {
