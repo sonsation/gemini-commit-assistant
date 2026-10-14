@@ -376,7 +376,7 @@ async function main() {
       fs.writeFileSync(tmpFile, formattedMessage, 'utf8');
 
       console.log(`${c.cyan}${t(lang, 'editor_starting')}${c.reset}`);
-      const editor = process.env.EDITOR || 'vi';
+      const editor = process.env.EDITOR || (process.platform === 'win32' ? 'notepad' : 'vi');
       spawnSync(editor, [tmpFile], { stdio: 'inherit' });
 
       let exitCode = 0;

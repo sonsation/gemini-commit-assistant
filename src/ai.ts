@@ -4,11 +4,36 @@ import { Provider } from './types';
 
 export function isCommandAvailable(cmd: string): boolean {
   try {
-    const res = spawnSync('which', [cmd], { stdio: 'ignore' });
+    const checker = process.platform === 'win32' ? 'where' : 'which';
+    const res = spawnSync(checker, [cmd], { stdio: 'ignore' });
     return res.status === 0;
   } catch {
     return false;
   }
+}
+
+export function resolveExecutable(cmd: string): string {
+  if (process.platform === 'win32') {
+    try {
+      const res = spawnSync('where', [cmd], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      if (res.status === 0 && res.stdout) {
+        const lines = res.stdout
+          .trim()
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+        const preferred = lines.find((p) => {
+          const lower = p.toLowerCase();
+          return lower.endsWith('.exe') || lower.endsWith('.cmd') || lower.endsWith('.bat');
+        });
+        if (preferred) return preferred;
+        if (lines[0]) return lines[0];
+      }
+    } catch {
+      // 무시
+    }
+  }
+  return cmd;
 }
 
 export interface AiExecutionResult {
@@ -41,8 +66,10 @@ export async function executeAiCli(params: {
     args.push('--disable-slash-commands', '--print', prompt);
   }
 
+  const executable = resolveExecutable(provider);
+
   return new Promise<AiExecutionResult>((resolve) => {
-    const child = spawn(provider, args, {
+    const child = spawn(executable, args, {
       cwd: os.tmpdir(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -99,7 +126,8 @@ export async function fetchAvailableModels(provider: Provider): Promise<ModelIte
 
   // agy models 조회
   try {
-    const res = spawnSync('agy', ['models'], { cwd: os.tmpdir(), encoding: 'utf8' });
+    const executable = resolveExecutable('agy');
+    const res = spawnSync(executable, ['models'], { cwd: os.tmpdir(), encoding: 'utf8' });
     if (res.status === 0 && res.stdout) {
       const lines = res.stdout.split('\n').filter(Boolean);
       const list: ModelItem[] = [];
