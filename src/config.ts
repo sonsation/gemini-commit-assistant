@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { Config, Language, Provider } from './types';
+import { Config, Language, Provider, ReviewLevel } from './types';
 import { interactiveMenu, c } from './ui';
 import { t } from './i18n';
 
@@ -60,6 +60,7 @@ export function loadConfig(providerOverride?: Provider): Config {
   let language: Language = local.language || global.language || 'ko';
   let provider: Provider = global.provider || 'agy';
   let model: string | undefined = global.model;
+  let reviewLevel: ReviewLevel = local.reviewLevel || global.reviewLevel || 'standard';
 
   // 로컬 provider가 명시되었을 때
   if (local.provider) {
@@ -86,7 +87,7 @@ export function loadConfig(providerOverride?: Provider): Config {
   // 모델-제공자 호환성 보정
   model = sanitizeModelForProvider(provider, model);
 
-  return { language, provider, model };
+  return { language, provider, model, reviewLevel };
 }
 
 /**
@@ -94,7 +95,7 @@ export function loadConfig(providerOverride?: Provider): Config {
  */
 export function saveConfig(
   target: 'global' | 'local',
-  settings: { language: Language; provider?: Provider; model?: string }
+  settings: { language: Language; provider?: Provider; model?: string; reviewLevel?: ReviewLevel }
 ): void {
   const filePath = target === 'global' ? GLOBAL_CONFIG_FILE : LOCAL_CONFIG_FILE;
   const payload: Record<string, string> = {
@@ -102,6 +103,7 @@ export function saveConfig(
   };
   if (settings.provider) payload.provider = settings.provider;
   if (settings.model) payload.model = settings.model;
+  if (settings.reviewLevel) payload.reviewLevel = settings.reviewLevel;
 
   writeJsonFile(filePath, payload);
 }

@@ -2,7 +2,7 @@ import { execSync, spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { GitChangeStats } from './types';
+import { GitChangeStats, FileDiff } from './types';
 
 const GIT_ENV = {
   ...process.env,
@@ -61,6 +61,31 @@ export function stageAll(): boolean {
 
 export function getStagedDiff(): string {
   return runGit(['diff', '--cached']);
+}
+
+/**
+ * Staged diff를 개별 파일 단위(FileDiff)로 분할하여 반환
+ */
+export function getStagedFilesDiffList(): FileDiff[] {
+  const fullDiff = getStagedDiff();
+  if (!fullDiff) return [];
+
+  const rawChunks = fullDiff.split(/(?=^diff --git )/m).filter(Boolean);
+  const result: FileDiff[] = [];
+
+  for (const chunk of rawChunks) {
+    const match = chunk.match(/^diff --git a\/(.+?) b\/(.+?)(?:\r?\n|$)/m);
+    let fileName = 'unknown';
+    if (match) {
+      fileName = match[2] !== '/dev/null' && match[2] !== 'dev/null' ? match[2] : match[1];
+    }
+    result.push({
+      file: fileName,
+      diff: chunk.trim(),
+    });
+  }
+
+  return result;
 }
 
 export function getUnstagedDiff(): string {

@@ -24,6 +24,10 @@ npm install -g gemini-commit-assistant
 git add file1.js file2.js
 aic # (또는 ai-commit)
 
+# 변경사항 사전 점검(코드 리뷰) 후 커밋 생성
+aic --review # (또는 aic -r)
+aic -r strict # 엄격 모드로 심층 점검
+
 # 모든 파일을 staging 후 커밋 메시지 생성
 aic --all # (ai-commit --all)
 
@@ -37,14 +41,28 @@ git aic  # (git ai-commit)
 
 ## 🔧 옵션
 
-| 옵션           | 설명                                    |
-| -------------- | --------------------------------------- |
-| `--all`, `-a`  | 모든 파일을 staging 후 커밋 메시지 생성 |
-| `--configure`  | 언어 / AI CLI / 모델 설정 변경          |
-| `--provider`   | 이번 실행에만 사용할 AI CLI 지정 (`agy` \| `claude`) |
-| `--setup`      | git alias 설정 (`git aic`)              |
-| `--unsetup`    | git alias 해제                          |
-| `--help`, `-h` | 도움말 표시                             |
+| 옵션                  | 설명                                                           |
+| --------------------- | -------------------------------------------------------------- |
+| `--all`, `-a`         | 모든 파일을 staging 후 커밋 메시지 생성                        |
+| `--review`, `-r`      | 변경사항 사전 점검(코드 리뷰) 및 커밋 본문에 결과 반영 (`light` \| `standard` \| `strict`) |
+| `--configure`         | 언어 / AI CLI / 모델 / 기본 리뷰 레벨 설정 변경                |
+| `--provider`          | 이번 실행에만 사용할 AI CLI 지정 (`agy` \| `claude`)           |
+| `--setup`             | git alias 설정 (`git aic`)                                     |
+| `--unsetup`           | git alias 해제                                                 |
+| `--help`, `-h`        | 도움말 표시                                                    |
+
+## 🔍 사전 점검 (Review) 및 병렬 분석
+
+커밋 생성 전 `--review` (`-r`) 플래그로 변경사항의 보안/품질을 점검할 수 있습니다.
+
+```bash
+aic -r            # 기본 standard 레벨 점검
+aic -r light      # 빠른 점검 (시크릿 누출, console.log 잔여물, 치명적 에러)
+aic -r strict     # 심층 점검 (클린코드, 성능, 예외 처리, 타입 안정성)
+```
+
+- **조건부 병렬 분석**: 변경 파일이 3개 이상이거나 diff가 클 때 자동으로 파일별 병렬 AI 분석을 실행하여 대규모 변경사항도 신속하고 정확하게 점검합니다.
+- **커밋 메시지 자동 반영**: 점검 결과 요약이 커밋 본문(`[Review: <level>]`)에 영구 보존됩니다.
 
 ## 🤖 AI CLI 선택 (agy / claude)
 

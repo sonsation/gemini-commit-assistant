@@ -41,13 +41,14 @@ import {
   commitInteractive,
   setupGitAlias,
   unsetupGitAlias,
+  getStagedFilesDiffList,
 } from './git';
-import { executeAiCli, isCommandAvailable, fetchAvailableModels } from './ai';
-import { createDetailedPrompt, createSimplePrompt } from './prompt';
-import { formatCommitMessage } from './parser';
+import { executeAiCli, executeParallelAiCli, isCommandAvailable, fetchAvailableModels } from './ai';
+import { createDetailedPrompt, createSimplePrompt, createReviewPrompt } from './prompt';
+import { formatCommitMessage, parseReviewOutput, mergeReviewResults } from './parser';
 import { c, interactiveMenu, promptInput, Spinner } from './ui';
 import { t } from './i18n';
-import { Language, Provider } from './types';
+import { Language, Provider, ReviewLevel, ReviewResult } from './types';
 
 async function configureSettings(scope: 'global' | 'local', currentLang: Language) {
   const isLocal = scope === 'local';
@@ -62,6 +63,7 @@ async function configureSettings(scope: 'global' | 'local', currentLang: Languag
   console.log(t(currentLang, 'config_current_lang', currentConfig.language));
   console.log(t(currentLang, 'config_current_provider', currentConfig.provider));
   console.log(t(currentLang, 'config_current_model', currentConfig.model));
+  console.log(t(currentLang, 'config_current_review_level', currentConfig.reviewLevel || 'standard'));
   console.log('');
 
   // 1. 언어 선택
@@ -122,10 +124,28 @@ async function configureSettings(scope: 'global' | 'local', currentLang: Languag
     }
   }
 
+  // 4. 기본 리뷰 레벨 선택
+  console.log(`\n${c.cyan}${t(newLang, 'config_review_level_title')}${c.reset}`);
+  const reviewLevels: ReviewLevel[] = ['light', 'standard', 'strict'];
+  const reviewOpts = [
+    t(newLang, 'config_skip'),
+    'light (Fast / Basic secrets & debug check)',
+    'standard (Normal / Logic & error handling check)',
+    'strict (Deep / Code quality & best practices)',
+  ];
+  const curLvl = currentConfig.reviewLevel || 'standard';
+  const curLevelIdx = curLvl === 'light' ? 1 : curLvl === 'strict' ? 3 : 2;
+  const reviewChoice = await interactiveMenu(t(newLang, 'config_review_level_title'), reviewOpts, curLevelIdx);
+  let newReviewLevel: ReviewLevel = curLvl;
+  if (reviewChoice >= 1 && reviewChoice <= 3) {
+    newReviewLevel = reviewLevels[reviewChoice - 1];
+  }
+
   saveConfig(scope, {
     language: newLang,
     provider: newProvider,
     model: newModel,
+    reviewLevel: newReviewLevel,
   });
 
   console.log(`\n${c.green}${t(newLang, 'config_saved', targetFile)}${c.reset}`);
@@ -136,6 +156,8 @@ async function main() {
 
   // 플래그 파싱
   let stageAllFlag = false;
+  let reviewFlag = false;
+  let reviewLevelOverride: ReviewLevel | undefined;
   let providerOverride: Provider | undefined;
   let action: string | null = null;
 
@@ -143,6 +165,31 @@ async function main() {
     const arg = args[i];
     if (arg === '--all' || arg === '-a') {
       stageAllFlag = true;
+    } else if (arg === '--review' || arg === '-r') {
+      reviewFlag = true;
+      const next = args[i + 1];
+      if (next === 'light' || next === 'standard' || next === 'strict') {
+        reviewLevelOverride = next;
+        i++;
+      }
+    } else if (arg.startsWith('--review=')) {
+      reviewFlag = true;
+      const val = arg.split('=')[1];
+      if (val === 'light' || val === 'standard' || val === 'strict') {
+        reviewLevelOverride = val;
+      }
+    } else if (arg === '--review-level') {
+      reviewFlag = true;
+      const val = args[++i];
+      if (val === 'light' || val === 'standard' || val === 'strict') {
+        reviewLevelOverride = val;
+      }
+    } else if (arg.startsWith('--review-level=')) {
+      reviewFlag = true;
+      const val = arg.split('=')[1];
+      if (val === 'light' || val === 'standard' || val === 'strict') {
+        reviewLevelOverride = val;
+      }
     } else if (arg === '--agy') {
       providerOverride = 'agy';
     } else if (arg === '--claude') {
@@ -169,7 +216,7 @@ async function main() {
       action = arg;
     } else {
       console.log(`${c.red}❌ Unknown option: ${arg}${c.reset}`);
-      console.log('Usage: aic [--all|-a] [--provider <agy|claude>] [--configure] [--setup|--unsetup] [--help|-h]');
+      console.log('Usage: aic [--all|-a] [--review|-r [light|standard|strict]] [--provider <agy|claude>] [--configure] [--setup|--unsetup] [--help|-h]');
       process.exit(1);
     }
   }
@@ -300,6 +347,81 @@ async function main() {
   const stagedStatus = getStagedNameStatus();
   const stagedStat = getStagedStat();
 
+  const reviewLevel: ReviewLevel = reviewLevelOverride || config.reviewLevel || 'standard';
+  let reviewSummaryForCommit: string | null = null;
+
+  // --review 옵션: 사전 점검 (단일 / 조건부 병렬 분석)
+  if (reviewFlag) {
+    const stagedFiles = getStagedFilesDiffList();
+    const isParallel = stagedFiles.length >= 3 || stagedDiff.length > 8000;
+
+    let reviewResult: ReviewResult;
+
+    if (isParallel && stagedFiles.length > 1) {
+      const spinner = new Spinner(t(lang, 'review_analyzing_parallel', String(stagedFiles.length), reviewLevel));
+      spinner.start();
+
+      const aiResults = await executeParallelAiCli(
+        stagedFiles,
+        async (fileDiff) => {
+          const prompt = createReviewPrompt({
+            language: lang,
+            level: reviewLevel,
+            diff: fileDiff.diff,
+            fileName: fileDiff.file,
+          });
+          return executeAiCli({ provider, prompt, model });
+        },
+        3
+      );
+
+      spinner.stop(aiResults.some((r) => r.success));
+
+      const parsedResults = aiResults.map((r) => parseReviewOutput(r.output, reviewLevel));
+      reviewResult = mergeReviewResults(parsedResults, reviewLevel);
+    } else {
+      const spinner = new Spinner(t(lang, 'review_analyzing_single', reviewLevel));
+      spinner.start();
+
+      const reviewPrompt = createReviewPrompt({
+        language: lang,
+        level: reviewLevel,
+        diff: stagedDiff,
+      });
+
+      const singleResult = await executeAiCli({
+        provider,
+        prompt: reviewPrompt,
+        model,
+      });
+
+      spinner.stop(singleResult.success);
+      reviewResult = parseReviewOutput(singleResult.output, reviewLevel);
+    }
+
+    // 터미널에 점검 리포트 출력
+    console.log(`\n${c.blue}============================================================${c.reset}`);
+    console.log(`${c.bold}${t(lang, 'review_report_title', reviewLevel)}${c.reset}`);
+    console.log(`${c.blue}============================================================${c.reset}\n`);
+    console.log(reviewResult.rawReport);
+    console.log(`\n${c.blue}============================================================${c.reset}\n`);
+
+    // 점검 후 계속 진행할지 여부 확인
+    const proceedOpts = [
+      t(lang, 'review_proceed_yes'),
+      t(lang, 'review_proceed_cancel'),
+    ];
+    const proceedChoice = await interactiveMenu(t(lang, 'review_proceed_prompt'), proceedOpts, 0);
+
+    if (proceedChoice !== 0) {
+      console.log(`${c.yellow}${t(lang, 'review_cancelled')}${c.reset}`);
+      process.exit(0);
+    }
+
+    reviewSummaryForCommit = reviewResult.commitSummary;
+    console.log('');
+  }
+
   // 커밋 메시지 생성 및 대화형 메뉴 루프
   while (true) {
     const detailedPrompt = createDetailedPrompt({
@@ -308,6 +430,7 @@ async function main() {
       stagedStat,
       diff: stagedDiff,
       issueKey,
+      reviewSummary: reviewSummaryForCommit,
     });
 
     const modelLabel = model ? `${provider} / ${model}` : provider;
@@ -342,7 +465,7 @@ async function main() {
     }
 
     // 포맷팅 정제
-    const formattedMessage = formatCommitMessage(aiMessage, issueKey);
+    const formattedMessage = formatCommitMessage(aiMessage, issueKey, reviewSummaryForCommit);
 
     console.log(`\n${c.blue}============================================================${c.reset}`);
     console.log(`${c.green}${t(lang, 'ai_generated')}${c.reset}`);

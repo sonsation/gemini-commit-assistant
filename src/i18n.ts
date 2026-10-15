@@ -1,7 +1,7 @@
 import { Language } from './types';
 import { c } from './ui';
 
-export const messages: Record<Language, Record<string, (arg?: string) => string>> = {
+export const messages: Record<Language, Record<string, (...args: (string | undefined)[]) => string>> = {
   en: {
     welcome: () => '🤖 AI Commit CLI - AI-powered commit message generator',
     setup_progress: () => '🔧 Setting up Git alias...',
@@ -13,8 +13,8 @@ export const messages: Record<Language, Record<string, (arg?: string) => string>
     unsetup_available: () => 'Now you can only use these commands:\n  - aic\n  - ai-commit',
     unsetup_help: () => '💡 To use git ai-commit again: aic --setup',
     unsetup_failed: () => '❌ Failed to remove Git alias.',
-    help_usage: () => 'Usage:\n  aic                     # Generate AI commit message for staged files\n  aic --all               # Stage all files and generate AI commit message\n  git aic                 # Git alias (setup required)',
-    help_options: () => 'Options:\n  --all, -a               # Stage all files\n  --configure             # Configure language / AI CLI / model\n  --provider <agy|claude> # Use a specific AI CLI for this run\n  --config-global         # Configure global settings\n  --config-local          # Configure local (.aicrc) settings\n  --setup                 # Set up git alias\n  --unsetup               # Remove git alias\n  --help, -h              # Show help',
+    help_usage: () => 'Usage:\n  aic                     # Generate AI commit message for staged files\n  aic --all               # Stage all files and generate AI commit message\n  aic --review            # Review changes before generating commit message\n  git aic                 # Git alias (setup required)',
+    help_options: () => 'Options:\n  --all, -a               # Stage all files\n  --review, -r [level]    # Review staged changes (light|standard|strict)\n  --configure             # Configure language / AI CLI / model / review level\n  --provider <agy|claude> # Use a specific AI CLI for this run\n  --config-global         # Configure global settings\n  --config-local          # Configure local (.aicrc) settings\n  --setup                 # Set up git alias\n  --unsetup               # Remove git alias\n  --help, -h              # Show help',
     not_git_repo: () => '❌ Not a Git repository.',
     staging_all: () => '📦 Staging all files...',
     provider_not_installed: (p = 'AI') => `⚠️  '${p}' CLI is not installed. Install it first, or switch AI with 'aic --configure'.`,
@@ -34,6 +34,13 @@ export const messages: Record<Language, Record<string, (arg?: string) => string>
     unstaged_files: () => '📊 Unstaged files:',
     no_changes: () => '📊 No changes found.',
     analyzing_staged: () => '📝 Analyzing staged file changes...',
+    review_analyzing_single: (lvl = 'standard') => `🔍 AI is inspecting changes [Level: ${lvl.toUpperCase()}]...`,
+    review_analyzing_parallel: (cnt = '0', lvl = 'standard') => `🔍 AI is inspecting ${cnt} files in parallel [Level: ${lvl.toUpperCase()}]...`,
+    review_report_title: (lvl = 'standard') => `📋 Pre-commit Inspection Report [Level: ${lvl.toUpperCase()}]`,
+    review_proceed_prompt: () => 'Proceed with commit after review?',
+    review_proceed_yes: () => 'Yes, proceed with commit',
+    review_proceed_cancel: () => 'Cancel (fix issues first)',
+    review_cancelled: () => '🚫 Commit cancelled to fix issues.',
     ai_generating: (m = 'Default') => `🤖 AI (${m}) is generating commit message...`,
     ai_generated: () => '🎯 AI Generated Commit Message:',
     ai_no_response: () => '⚠️  No AI response received.',
@@ -57,9 +64,11 @@ export const messages: Record<Language, Record<string, (arg?: string) => string>
     config_current_lang: (l = 'ko') => `  - Language: ${l}`,
     config_current_provider: (p = 'agy') => `  - AI CLI: ${p}`,
     config_current_model: (m = 'Not set') => `  - Model: ${m || 'Not set'}`,
+    config_current_review_level: (lvl = 'standard') => `  - Default Review Level: ${lvl}`,
     config_lang_title: () => 'Language Settings',
     config_provider_title: () => 'AI CLI Settings (Provider)',
     config_model_title: () => 'AI Model Settings',
+    config_review_level_title: () => 'Default Review Level Settings',
     config_model_fetching: () => '  Fetching available models...',
     config_model_fetch_failed: () => '  ⚠️ Failed to fetch model list.',
     config_model_manual_prompt: () => 'Enter model name manually (Enter to keep, "clear" to unset): ',
@@ -81,8 +90,8 @@ export const messages: Record<Language, Record<string, (arg?: string) => string>
     unsetup_available: () => '이제 다음 명령어들만 사용할 수 있습니다:\n  - aic\n  - ai-commit',
     unsetup_help: () => '💡 git aic 명령어를 다시 사용하려면: aic --setup',
     unsetup_failed: () => '❌ Git alias 해제에 실패했습니다.',
-    help_usage: () => '사용법:\n  aic                     # staged 파일로 AI 커밋 메시지 생성\n  aic --all               # 모든 파일을 staging 후 AI 커밋 메시지 생성\n  git aic                 # git alias (설정 필요)',
-    help_options: () => '옵션:\n  --all, -a               # 모든 파일을 staging에 추가\n  --configure             # 언어 / AI CLI / 모델 설정 변경\n  --provider <agy|claude> # 이번 실행에만 사용할 AI CLI 지정\n  --config-global         # 글로벌(전역) 설정 변경\n  --config-local          # 로컬(프로젝트) 설정 변경\n  --setup                 # git alias 설정\n  --unsetup               # git alias 해제\n  --help, -h              # 도움말 표시',
+    help_usage: () => '사용법:\n  aic                     # staged 파일로 AI 커밋 메시지 생성\n  aic --all               # 모든 파일을 staging 후 AI 커밋 메시지 생성\n  aic --review            # 변경사항 사전 점검(코드 리뷰) 후 커밋 생성\n  git aic                 # git alias (설정 필요)',
+    help_options: () => '옵션:\n  --all, -a               # 모든 파일을 staging에 추가\n  --review, -r [level]    # 변경사항 사전 점검 (light|standard|strict)\n  --configure             # 언어 / AI CLI / 모델 / 기본 리뷰 레벨 설정 변경\n  --provider <agy|claude> # 이번 실행에만 사용할 AI CLI 지정\n  --config-global         # 글로벌(전역) 설정 변경\n  --config-local          # 로컬(프로젝트) 설정 변경\n  --setup                 # git alias 설정\n  --unsetup               # git alias 해제\n  --help, -h              # 도움말 표시',
     not_git_repo: () => '❌ Git 저장소가 아닙니다.',
     staging_all: () => '📦 모든 파일을 staging합니다...',
     provider_not_installed: (p = 'AI') => `⚠️  '${p}' CLI가 설치되어 있지 않습니다. 먼저 설치하거나 'aic --configure'로 다른 AI를 선택해주세요.`,
@@ -102,6 +111,13 @@ export const messages: Record<Language, Record<string, (arg?: string) => string>
     unstaged_files: () => '📊 unstaged 파일 목록:',
     no_changes: () => '📊 변경된 파일이 없습니다.',
     analyzing_staged: () => '📝 Staged 파일의 변경사항을 분석합니다...',
+    review_analyzing_single: (lvl = 'standard') => `🔍 AI가 변경사항을 점검(리뷰)하고 있습니다 [레벨: ${lvl.toUpperCase()}]...`,
+    review_analyzing_parallel: (cnt = '0', lvl = 'standard') => `🔍 AI가 ${cnt}개 파일을 병렬로 점검(리뷰)하고 있습니다 [레벨: ${lvl.toUpperCase()}]...`,
+    review_report_title: (lvl = 'standard') => `📋 변경사항 사전 점검 리포트 [레벨: ${lvl.toUpperCase()}]`,
+    review_proceed_prompt: () => '점검 결과를 확인했습니다. 커밋을 계속 진행할까요?',
+    review_proceed_yes: () => '네, 계속 커밋을 진행합니다 (Yes)',
+    review_proceed_cancel: () => '수정하러 가기 (Cancel)',
+    review_cancelled: () => '🚫 수정을 위해 커밋이 중단되었습니다.',
     ai_generating: (m = '기본 모델') => `🤖 AI (${m})가 커밋 메시지를 생성 중입니다...`,
     ai_generated: () => '🎯 AI 생성 커밋 메시지:',
     ai_no_response: () => '⚠️  AI 응답을 받지 못했습니다.',
@@ -125,9 +141,11 @@ export const messages: Record<Language, Record<string, (arg?: string) => string>
     config_current_lang: (l = 'ko') => `  - 언어: ${l}`,
     config_current_provider: (p = 'agy') => `  - AI CLI: ${p}`,
     config_current_model: (m = '지정 안 됨') => `  - 모델: ${m || '지정 안 됨'}`,
+    config_current_review_level: (lvl = 'standard') => `  - 기본 리뷰 레벨: ${lvl}`,
     config_lang_title: () => '언어 설정 (Language)',
     config_provider_title: () => '사용할 AI CLI 설정 (Provider)',
     config_model_title: () => 'AI 모델 설정 (Model)',
+    config_review_level_title: () => '기본 리뷰 레벨 설정 (Review Level)',
     config_model_fetching: () => '  사용 가능한 모델을 불러오는 중...',
     config_model_fetch_failed: () => '  ⚠️ 모델 목록을 불러오지 못했습니다.',
     config_model_manual_prompt: () => '모델 이름 직접 입력 (엔터: 유지, "clear": 지우기): ',
@@ -140,9 +158,9 @@ export const messages: Record<Language, Record<string, (arg?: string) => string>
   },
 };
 
-export function t(lang: Language, key: string, arg?: string): string {
+export function t(lang: Language, key: string, ...args: (string | undefined)[]): string {
   const table = messages[lang] || messages.ko;
   const fn = table[key] || messages.en[key];
   if (!fn) return key;
-  return fn(arg);
+  return fn(...args);
 }

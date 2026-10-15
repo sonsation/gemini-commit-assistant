@@ -166,3 +166,29 @@ export async function fetchAvailableModels(provider: Provider): Promise<ModelIte
 
   return [];
 }
+
+/**
+ * 여러 AI 프롬프트를 동시성 제어(Worker pool)를 통해 병렬로 실행
+ */
+export async function executeParallelAiCli<T>(
+  items: T[],
+  worker: (item: T, index: number) => Promise<AiExecutionResult>,
+  concurrency = 3
+): Promise<AiExecutionResult[]> {
+  const results: AiExecutionResult[] = new Array(items.length);
+  let currentIndex = 0;
+
+  async function runner() {
+    while (currentIndex < items.length) {
+      const idx = currentIndex++;
+      results[idx] = await worker(items[idx], idx);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => runner()
+  );
+  await Promise.all(workers);
+  return results;
+}

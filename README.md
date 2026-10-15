@@ -24,6 +24,10 @@ npm install -g gemini-commit-assistant
 git add file1.js file2.js
 aic # or ai-commit
 
+# Review staged changes before commit
+aic --review # or aic -r
+aic -r strict # deep inspection with strict mode
+
 # Stage all files and generate commit message
 aic --all # ai-commit --all
 
@@ -37,14 +41,28 @@ git aic  # git ai-commit
 
 ## 🔧 Options
 
-| Option         | Description                                      |
-| -------------- | ------------------------------------------------ |
-| `--all`, `-a`  | Stage all files before generating commit message |
-| `--configure`  | Change language / AI CLI / model settings        |
-| `--provider`   | Use a specific AI CLI for this run (`agy` \| `claude`) |
-| `--setup`      | Set up git alias (`git aic`)                     |
-| `--unsetup`    | Remove git alias                                 |
-| `--help`, `-h` | Show help                                        |
+| Option                | Description                                                          |
+| --------------------- | -------------------------------------------------------------------- |
+| `--all`, `-a`         | Stage all files before generating commit message                     |
+| `--review`, `-r`      | Review staged changes and include review in commit (`light` \| `standard` \| `strict`) |
+| `--configure`         | Change language / AI CLI / model / review level settings             |
+| `--provider`          | Use a specific AI CLI for this run (`agy` \| `claude`)               |
+| `--setup`             | Set up git alias (`git aic`)                                         |
+| `--unsetup`           | Remove git alias                                                     |
+| `--help`, `-h`        | Show help                                                            |
+
+## 🔍 Pre-commit Inspection (Review) & Parallel Analysis
+
+Use the `--review` (`-r`) option to inspect changes before committing:
+
+```bash
+aic -r            # Standard level inspection (default)
+aic -r light      # Fast check (secrets, leftover console.log, fatal crash risks)
+aic -r strict     # Deep review (best practices, robustness, performance, typing)
+```
+
+- **Conditional Parallel Analysis**: When 3+ files or large diffs are staged, files are automatically analyzed in parallel for speed and accuracy.
+- **Embedded in Commit Log**: Review summaries (`[Review: <level>]`) are automatically appended to the commit body for future auditability.
 
 ## 🤖 Choosing an AI CLI (agy / claude)
 
